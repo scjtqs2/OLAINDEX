@@ -33,6 +33,7 @@ class DriveController extends BaseController
             $info=$service->fetchInfo();
             var_dump($info);
         }
+        return;
     }
 
     /**
