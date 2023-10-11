@@ -71,6 +71,7 @@ Route::get('s/{hash}/{item_id}', 'DriveController@download')->name('download');
 
 Route::post('drive/preload', 'DriveController@preload')->name('preload');
 Route::get('/', 'DriveController@query')->name('home');
+Route::get('/cron', 'DriveController@cron')->name('cron');
 if (setting('single_account_mode', 0)) {
     Route::get('{query?}', 'DriveController@query')->name('drive.query')->where('query', '.*');
 } else {

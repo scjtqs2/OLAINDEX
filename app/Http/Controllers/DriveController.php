@@ -24,6 +24,17 @@ class DriveController extends BaseController
 {
     use ApiResponseTrait;
 
+    public function cron(Request $request)
+    {
+        $accounts = Account::fetchlist();
+        foreach ($accounts as $account) {
+            $ac=Account::find($account->id);
+            $service = $ac->getOneDriveService();
+            $info=$service->fetchInfo();
+            var_dump($info);
+        }
+    }
+
     /**
      * 资源处理
      * @param Request $request

@@ -1,0 +1,336 @@
+---
+kind: Namespace
+apiVersion: v1
+metadata:
+  name: www-php
+
+---
+kind: ConfigMap
+apiVersion: v1
+metadata:
+  name: php-conf
+  namespace: www-php
+data:
+  php.ini: |
+    display_errors = On
+
+---
+kind: ConfigMap
+apiVersion: v1
+metadata:
+  name: nginx-conf
+  namespace: www-php
+data:
+  olaindex.conf: |
+    user www-data;
+    worker_processes auto;
+    events {
+      worker_connections 1024;
+    }
+    error_log  /var/log/nginx/error.log warn;
+    http {
+        include mime.types;
+        log_format  main  '$remote_addr - $remote_user [$time_local] "$request" '
+                  '$status $body_bytes_sent "$http_referer" '
+                  '"$http_user_agent" "$http_x_forwarded_for"';
+        access_log  /var/log/nginx/access.log  main;
+        default_type application/octet-stream;
+        server_names_hash_bucket_size 128;
+        client_header_buffer_size 32k;
+        large_client_header_buffers 4 32k;
+        client_max_body_size 10m;
+        client_body_buffer_size 10m;
+        sendfile on;
+        tcp_nopush on;
+        keepalive_timeout 120;
+        server_tokens off;
+        tcp_nodelay on;
+        fastcgi_connect_timeout 300;
+        fastcgi_buffer_size 64k;
+        fastcgi_buffers 4 64k;
+        fastcgi_busy_buffers_size 128k;
+        fastcgi_temp_file_write_size 128k;
+        fastcgi_intercept_errors on;
+
+        #Gzip Compression
+        gzip on;
+        gzip_buffers 16 8k;
+        gzip_comp_level 6;
+        gzip_http_version 1.1;
+        gzip_min_length 256;
+        gzip_proxied any;
+        gzip_vary on;
+        gzip_types
+        text/xml application/xml application/atom+xml application/rss+xml application/xhtml+xml image/svg+xml
+        text/javascript application/javascript application/x-javascript
+        text/x-json application/json application/x-web-app-manifest+json
+        text/css text/plain text/x-component
+        font/opentype application/x-font-ttf application/vnd.ms-fontobject
+        image/x-icon;
+        gzip_disable "MSIE [1-6]\.(?!.*SV1)";
+        open_file_cache max=1000 inactive=20s;
+        open_file_cache_valid 30s;
+        open_file_cache_min_uses 2;
+        open_file_cache_errors on;
+            server {
+            listen 80;
+            server_name _;
+            proxy_set_header X-Forwarded-For $remote_addr;
+            server_tokens off;
+            root /var/www/public;
+            index index.html index.htm index.php;
+            fastcgi_buffers 8 128k;
+            send_timeout 90;
+            add_header X-Frame-Options "SAMEORIGIN";
+            add_header X-XSS-Protection "1; mode=block";
+            add_header X-Content-Type-Options "nosniff";
+            proxy_set_header   X-Forwarded-Proto https;
+            #access_log      /var/log/nginx/book.access.log;
+            #error_log       /var/log/nginx/book.error.log;
+            location / {
+               try_files $uri $uri/ /index.php?$query_string;
+            }
+            location = /favicon.ico { access_log off; log_not_found off; }
+            location = /robots.txt  { access_log off; log_not_found off; }
+            error_page 404 /index.php;
+              #proxy the php scripts to php-fpm
+            location ~ \.php$ {
+                    include fastcgi_params;
+                    fastcgi_split_path_info ^(.+\.php)(/.+)$;
+                    #配置fastcgi的一些参数
+                    fastcgi_param SCRIPT_FILENAME /var/www/public/index.php;
+                    fastcgi_intercept_errors on;
+                    fastcgi_pass   olaindex:9000;
+            }
+            location ~ /\.(?!well-known).* {
+              deny all;
+            }
+    }
+    }
+
+---
+kind: Deployment
+apiVersion: apps/v1
+metadata:
+  name: olaindex
+  namespace: www-php
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: olaindex
+  template:
+    metadata:
+      labels:
+        app: olaindex
+    spec:
+      volumes:
+        - name: data
+          nfs:
+            path: /data/share/k8s/OLAINDEX
+            server: 10.0.0.10
+        - name: passwd
+          hostPath:
+            path: /etc/passwd
+        - name: php-ini
+          configMap:
+            name: php-conf
+            items:
+              - key: php.ini
+                path: php.ini
+      containers:
+        - name: php-fpm
+          image: scjtqs/php:thinkcmf-7.4-fpm
+          env:
+            - name: TZ
+              value: Asia/Shanghai
+          resources:
+            limits:
+              cpu: '1'
+              memory: 1000Mi
+            requests:
+              cpu: 50m
+              memory: 200Mi
+          volumeMounts:
+            - name: data
+              mountPath: /var/www
+            - name: passwd
+              mountPath: /etc/passwd
+              readOnly: true
+            - name: php-ini
+              mountPath: /usr/local/etc/php/conf.d/php.ini
+              subPath: php.ini
+          livenessProbe:
+            tcpSocket:
+              port: 9000
+            initialDelaySeconds: 60
+            timeoutSeconds: 1
+            periodSeconds: 5
+            successThreshold: 1
+            failureThreshold: 3
+          terminationMessagePath: /dev/termination-log
+          terminationMessagePolicy: File
+          imagePullPolicy: Always
+      restartPolicy: Always
+      terminationGracePeriodSeconds: 30
+      dnsPolicy: ClusterFirst
+      nodeSelector: {}
+      securityContext: { }
+      schedulerName: default-scheduler
+  strategy:
+    rollingUpdate:
+      maxSurge: 25%
+      maxUnavailable: 25%
+    type: RollingUpdate
+  revisionHistoryLimit: 10
+  progressDeadlineSeconds: 600
+
+---
+kind: Deployment
+apiVersion: apps/v1
+metadata:
+  name: nginx-olaindex
+  namespace: www-php
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: nginx-olaindex
+  template:
+    metadata:
+      labels:
+        app: nginx-olaindex
+    spec:
+      volumes:
+        - name: data
+          nfs:
+            path: /data/share/k8s/OLAINDEX
+            server: 10.0.0.10
+        - name: passwd
+          hostPath:
+            path: /etc/passwd
+        - name: olaindex
+          configMap:
+            name: nginx-conf
+            items:
+              - key: olaindex.conf
+                path: olaindex.conf
+
+      containers:
+        - name: nginx
+          image: nginx:alpine
+          env:
+            - name: TZ
+              value: Asia/Shanghai
+          resources:
+            limits:
+              cpu: '1'
+              memory: 1000Mi
+            requests:
+              cpu: 50m
+              memory: 200Mi
+          volumeMounts:
+            - name: data
+              mountPath: /var/www
+            - name: passwd
+              mountPath: /etc/passwd
+              readOnly: true
+            - name: olaindex
+              mountPath: /etc/nginx/nginx.conf
+              subPath: olaindex.conf
+              readOnly: true
+          livenessProbe:
+            tcpSocket:
+              port: 80
+            initialDelaySeconds: 60
+            timeoutSeconds: 1
+            periodSeconds: 5
+            successThreshold: 1
+            failureThreshold: 3
+          terminationMessagePath: /dev/termination-log
+          terminationMessagePolicy: File
+          imagePullPolicy: Always
+      restartPolicy: Always
+      terminationGracePeriodSeconds: 30
+      dnsPolicy: ClusterFirst
+      nodeSelector: {}
+      securityContext: { }
+      schedulerName: default-scheduler
+  strategy:
+    rollingUpdate:
+      maxSurge: 25%
+      maxUnavailable: 25%
+    type: RollingUpdate
+  revisionHistoryLimit: 10
+  progressDeadlineSeconds: 600
+
+---
+kind: Service
+apiVersion: v1
+metadata:
+  name: olaindex
+  namespace: www-php
+  labels:
+    app: olaindex
+spec:
+  ports:
+    - name: http
+      protocol: TCP
+      port: 9000
+      targetPort: 9000
+  selector:
+    app: olaindex
+  type: ClusterIP
+
+---
+kind: Service
+apiVersion: v1
+metadata:
+  name: nginx-olaindex
+  namespace: www-php
+  labels:
+    app: nginx-olaindex
+spec:
+  ports:
+    - name: http
+      protocol: TCP
+      port: 80
+      targetPort: 80
+  selector:
+    app: nginx-olaindex
+  type: ClusterIP
+
+---
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  annotations:
+    cert-manager.io/cluster-issuer: letsencrypt-dns01  # 填你cert-manager 注册了的方式
+    kubernetes.io/tls-acme: 'true'          # true的话，cert-manager 会自动生成对应的ssl证书
+    nginx.ingress.kubernetes.io/cors-allow-headers: X-Forwarded-For
+    nginx.ingress.kubernetes.io/enable-cors: 'true'
+    #nginx.ingress.kubernetes.io/backend-protocol: HTTPS  # 后端是https
+    nginx.ingress.kubernetes.io/proxy-body-size: 10G
+    nginx.ingress.kubernetes.io/server-snippet: |-
+      server_tokens off;
+      proxy_hide_header X-Powered-By;
+  name: olaindex
+  namespace: www-php
+spec:
+  ingressClassName: nginx
+  rules:
+    - host: olaindex.mobyds.com         # 改成你自己的域名
+      http:
+        paths:
+          - backend:
+              service:
+                name: nginx-olaindex
+                port:
+                  number: 80
+            path: /
+            pathType: Prefix
+  tls:
+    - hosts:
+        - olaindex.mobyds.com           # 改成你自己的域名
+      secretName: olaindex-tls
+
