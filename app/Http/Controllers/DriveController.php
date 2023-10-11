@@ -28,10 +28,15 @@ class DriveController extends BaseController
     {
         $accounts = Account::fetchlist();
         foreach ($accounts as $account) {
-            $ac=Account::find($account->id);
+            $ac = Account::find($account->id);
             $service = $ac->getOneDriveService();
-            $info=$service->fetchInfo();
+            $info = $service->fetchInfo();
+            $refresh = $ac - refreshOneDriveQuota(true);
+            $list = $service->fetchList();
             var_dump($info);
+            var_dump($refresh);
+            var_dump($list);
+            sleep(5);
         }
         return;
     }
