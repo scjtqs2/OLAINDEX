@@ -31,7 +31,7 @@ class DriveController extends BaseController
             $ac = Account::find($account->id);
             $service = $ac->getOneDriveService();
             $info = $service->fetchInfo();
-            $refresh = $ac - refreshOneDriveQuota(true);
+            $refresh = $ac->refreshOneDriveQuota(true);
             $list = $service->fetchList();
             var_dump($info);
             var_dump($refresh);
