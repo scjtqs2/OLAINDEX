@@ -33,10 +33,10 @@ class DriveController extends BaseController
             $info = $service->fetchInfo();
             $refresh = $ac->refreshOneDriveQuota(true);
             $list = $service->fetchList();
-            var_dump($info);
-            var_dump($refresh);
-            var_dump($list);
-            sleep(5);
+//            var_dump($info);
+//            var_dump($refresh);
+//            var_dump($list);
+            sleep(2);
         }
         return;
     }
