@@ -38,7 +38,7 @@ class DriveController extends BaseController
 //            var_dump($list);
             sleep(2);
         }
-        return;
+        return $this->success(["msg" => "success"]);
     }
 
     /**
